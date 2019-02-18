@@ -71,12 +71,38 @@ impl NumInterner {
     }
 }
 
+pub struct Ptr<'a> {
+    s: &'a str,
+    pos: usize,
+}
+
+impl<'a> Ptr<'a> {
+    pub fn new<'b>(s: &'b str) -> Ptr<'b> {
+        Ptr {
+            s,
+            pos: 0usize,
+        }
+    }
+
+    pub fn ret(&self) -> usize {
+        return self.pos;
+    }
+
+    pub fn capacity_left(&self) -> usize {
+        self.s.len() - self.pos
+    }
+
+    pub fn bump(&mut self) -> Option<char> {
+        parse_utf8(&self.s, &mut self.pos)
+    }
+}
+
 pub struct Lexer {
     pub string_interner: StringInterner,
     pub num_interner: NumInterner,
 }
 
-fn parse_utf8(input: &str, start: &mut usize) -> Option<char> {
+pub fn parse_utf8(input: &str, start: &mut usize) -> Option<char> {
     use std::char::from_u32_unchecked;
     let c1: u8 = 0b10000000;
     let c2: u8 = 0b11000000;
@@ -145,8 +171,8 @@ fn parse_utf8(input: &str, start: &mut usize) -> Option<char> {
     if !is_cont(i4) || i1 >= c5 {
         return None;
     }
-    let v1: u8 = (i1 & !c5);
-    let v2: u8 = (i2 & !c2);
+    let v1: u8 = i1 & !c5;
+    let v2: u8 = i2 & !c2;
     if v1 == 0 && v2 < 0b10000u8 {
         return None;
     }
@@ -169,16 +195,220 @@ impl Lexer {
         }
     }
 
-    pub fn lex<'a>(&mut self, input: &'a str) -> (Token, &'a str) {
+    pub fn lex<'a>(&mut self, input: &'_ str) -> (Token, usize) {
         let len = input.len();
-        if len < 4 {
-            return (Token::Eof(len), input);
+        if input.len() < 4 {
+            return (Token::Eof(len), 0);
         }
-        let mut start = 0;
-        while start + 4 <= len {
-            let c = parse_utf8(input, &mut start).unwrap();
-            return (Token::Error, &input[start..]);
+        let mut ptr = Ptr::new(input);
+        match ptr.bump() {
+            Some(c) => {
+                match (c) {
+                    '=' => {
+                        return self.start_eq(&mut ptr);
+                    },
+                    '<' => {
+                        return self.start_le(&mut ptr);
+                    },
+                    '>' => {
+                        return self.start_ge(&mut ptr);
+                    },
+                    '&' => {
+                        return self.start_and(&mut ptr);
+                    },
+                    '|' => {
+                        return self.start_or(&mut ptr);
+                    },
+                    '!' => {
+                        return self.start_not(&mut ptr);
+                    },
+                    '~' => {
+                        return self.start_tilde(&mut ptr);
+                    },
+                    '@' => {
+                        return self.start_at(&mut ptr);
+                    },
+                    '.' => {
+                        return self.start_dot(&mut ptr);
+                    },
+                    ',' => {
+                        return self.start_comma(&mut ptr);
+                    },
+                    ';' => {
+                        return self.start_semi(&mut ptr);
+                    },
+                    ':' => {
+                        return self.start_colon(&mut ptr);
+                    },
+                    '#' => {
+                        return self.start_pound(&mut ptr);
+                    },
+                    '$' => {
+                        return self.start_dollar(&mut ptr);
+                    },
+                    '?' => {
+                        return self.start_question(&mut ptr);
+                    },
+                    '\'' => {
+                        return self.start_quote(&mut ptr);
+                    },
+                    '{' => {
+                        return self.start_open_brace(&mut ptr);
+                    },
+                    '}' => {
+                        return self.start_closing_brace(&mut ptr);
+                    },
+                    '(' => {
+                        return self.start_open_paren(&mut ptr);
+                    },
+                    ')' => {
+                        return self.start_closing_paren(&mut ptr);
+                    },
+                    '[' => {
+                        return self.start_open_bracket(&mut ptr);
+                    },
+                    ']' => {
+                        return self.start_closing_bracket(&mut ptr);
+                    },
+                    '+' => {
+                        return self.start_add(&mut ptr);
+                    },
+                    '-' => {
+                        return self.start_minus(&mut ptr);
+                    },
+                    '*' => {
+                        return self.start_star(&mut ptr);
+                    },
+                    '/' => {
+                        return self.start_slash(&mut ptr);
+                    },
+                    '%' => {
+                        return self.start_percentage(&mut ptr);
+                    },
+                    '^' => {
+                        return self.start_caret(&mut ptr);
+                    },
+                    _ => (),
+                }
+            },
+            None => {
+                return (Token::Error{}, ptr.ret());
+            },
         }
+        panic!();
+    }
+}
+
+impl Lexer {
+    fn start_eq(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_le(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_ge(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_and(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_or(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_not(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_tilde(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_at(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_dot(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_comma(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_semi(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_colon(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_pound(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_dollar(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_question(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_quote(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_open_brace(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_closing_brace(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_open_paren(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_closing_paren(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_open_bracket(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_closing_bracket(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_add(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_minus(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_star(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_slash(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_percentage(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+        panic!();
+    }
+
+    fn start_caret(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
         panic!();
     }
 }
