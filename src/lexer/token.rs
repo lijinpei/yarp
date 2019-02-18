@@ -72,6 +72,8 @@ pub enum Token {
     /// A closing delimiter, eg. `}`
     CloseDelim(DelimToken),
 
+    Error,
+
     /* Literals */
     Literal(Lit),
 
