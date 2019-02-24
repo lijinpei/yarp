@@ -34,11 +34,11 @@ pub enum TokenResult {
 }
 
 // an endless u8 generator
-trait U8Generator<'a> = Generator<Yield = &'a [u8], Return = !>;
+pub trait U8Generator<'a> = Generator<Yield = &'a [u8], Return = !>;
 // an endless char generator, unless meets invalid utf8, or don't have enought u8 to decode utf8 char
-trait CharGenerator = Generator<Yield = CharResult, Return = Utf8Error>;
+pub trait CharGenerator = Generator<Yield = CharResult, Return = Utf8Error>;
 // and endless Token generator, unless unlerlying CharGenerator didn't, and don't see enough char to decide on a whole token(eg. '=' vs '==')
-trait TokenGenerator = Generator<Yield = TokenResult, Return = Utf8Error>;
+pub trait TokenGenerator = Generator<Yield = TokenResult, Return = Utf8Error>;
 
 pub type IntKey = usize;
 /*
@@ -188,24 +188,77 @@ mod test {
     }
 }
 
-fn token_generator_from_char(
-    mut source: &CharGenerator,
+pub fn token_generator_from_char<T: CharGenerator + std::marker::Unpin>(
+    mut source: T,
 ) -> impl TokenGenerator {
     return move || {
-        /*
+        let handle_eq = handle_eq_impl(Pin::new(&mut source));
+//        let handle_plus = handle_plus_impl(Pin::new(&mut source));
+
         macro_rules! next_char {
             () => {
-
+                loop {
+                    match Pin::new(&mut source).resume() {
+                        GeneratorState::Yielded(cr) => {
+                            match cr {
+                                CharResult::Ok(c) => break c,
+                                CharResult::NeedMoreU8 => yield TokenResult::NeedMoreU8,
+                            }
+                        },
+                        GeneratorState::Complete(err) => {
+                            return err;
+                        }
+                    }
+                }
             }
         }
-        loop {
+
+        macro_rules! my_co_await {
+            ($func:ident($($exp:expr),*)) => {
+                match $func(Pin::new(&mut source, $($expr),*)) {
+                    GeneratorState::Yielded(tr) => yield tr,
+                    GeneratorState::Complete(err) => return err,
+                }
+            }
         }
-        */
+
+        loop {
+            let c = next_char!();
+            match c {
+                '=' => {
+                    //my_co_await(lex_eq());
+        return Utf8Error::InvalidLeading;
+                },
+                _ => {
+        return Utf8Error::InvalidLeading;
+                }
+            }
+        }
+
+        return Utf8Error::InvalidLeading;
+    };
+}
+
+fn handle_eq_impl<'a, T: CharGenerator + std::marker::Unpin>(
+    source: Pin<&'a mut T> 
+) -> impl TokenGenerator + 'a {
+    return || {
+        source.resume();
         yield TokenResult::NeedMoreU8;
         return Utf8Error::InvalidLeading;
     };
 }
 
+fn handle_plus_impl<'a, T: CharGenerator + std::marker::Unpin>(
+    source: Pin<&'a mut CharGenerator>
+) -> impl TokenGenerator + 'a {
+    return || {
+        let source = source;
+        source.resume();
+        yield TokenResult::NeedMoreU8;
+        return Utf8Error::InvalidLeading;
+    };
+}
 /*
 impl Future for CharStream {
     type Output = char;
