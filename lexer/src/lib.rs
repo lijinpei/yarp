@@ -1,22 +1,154 @@
 #![feature(rustc_private, hash_raw_entry, never_type)]
 #![feature(generators, generator_trait)]
+#![feature(trait_alias)]
 
 extern crate syntax;
 
 pub use syntax::parse::token::Token;
 pub mod utf8;
 
-use std::collections::*;
+use std::ops::{Generator, GeneratorState};
 use std::pin::Pin;
-use std::ops::Generator;
 
+pub enum Utf8Error {
+    InvalidLeading,
+    InvalidCont,
+    InvalidScalarValue,
+}
 
-type IntKey = usize;
+pub enum CharResult {
+    Ok(char),
+    TooShort,
+}
 
+pub enum TokenResult {
+    Ok(Token),
+    CharErr,
+    CharTooShort(usize),
+    TooShort,
+}
 
+// an endless u8 generator
+pub trait U8Generator<'a> = Generator<Yield = &'a [u8], Return = !>;
+// an endless char generator, unless meets invalid utf8, or don't have enought u8 to decode utf8 char
+pub trait CharGenerator = Generator<Yield = CharResult, Return = Utf8Error>;
+// and endless Token generator, unless unlerlying CharGenerator didn't, and don't see enough char to decide on a whole token(eg. '=' vs '==')
+pub trait TokenGenerator = Generator<Yield = TokenResult, Return = !>;
+
+pub type IntKey = usize;
+/*
 pub struct StringInterner {
     storage: HashMap<Box<str>, usize>,
     index: Vec<*const str>,
+}
+*/
+
+pub fn char_generator_from_byte<'b , T: 'b + U8Generator<'b>>(
+    source: T,
+) -> impl Generator<Yield = CharResult, Return = Utf8Error> + 'b where T: std::marker::Unpin {
+    return move || {
+        let mut source = source;
+        loop {
+        let mut len = 0usize;
+        let mut pos = 0usize;
+        let mut input: &[u8] = &[];
+
+        macro_rules! replenish{
+            () => (
+                {
+                    {
+                    let res = Pin::new(&mut source).resume();
+                match res {
+                    GeneratorState::Yielded(buf) => {
+                        input = buf;
+                        len = buf.len();
+                        assert!(len != 0);
+                        pos = 1;
+                        input[0] as u32
+                    },
+                    _ => panic!(),
+                }
+                    }
+                }
+            )
+        }
+
+        macro_rules! next_char {
+            () => (
+                if pos < len {
+                    let p1 = pos;
+                    pos += 1;
+                    input[p1] as u32
+                } else {
+                    yield CharResult::TooShort;
+                    replenish!()
+                }
+            )
+        }
+
+        macro_rules! next_char_cont {
+            () => {
+                {
+                let c = next_char!();
+                let mask = 0b1100_0000;
+                if c & mask  != 0b1000_0000 {
+                    return Utf8Error::InvalidCont;
+                }
+                c & !mask
+                }
+            }
+        }
+
+        macro_rules! ok_char {
+            ($u_32:expr) => {
+                unsafe { CharResult::Ok(std::char::from_u32_unchecked($u_32)) }
+            }
+        }
+
+        loop {
+            let c1 = next_char!();
+            if c1 < 0b1000_0000u32 {
+                yield ok_char!(c1);
+                continue;
+            }
+            if c1 < 0b1100_0000u32 {
+                return Utf8Error::InvalidLeading;
+            }
+            let c2 = next_char_cont!();
+            if c1 < 0b1110_0000u32 {
+                yield ok_char!((c1 & 0x1F) << 6 | c2);
+                continue;
+            }
+            let c3 = next_char_cont!();
+            if c1 < 0b1111_0000u32 {
+                yield ok_char!((c1 & 0xF) << 12 | c2 << 6 | c3);
+                continue;
+            }
+            let c4 = next_char_cont!();
+            yield ok_char!((c1 & 0x7) << 18 | c2 << 12 | c3 << 6 | c4);
+        }
+    }};
+}
+
+/*
+fn token_generator_from_char(
+    _input: &CharGenerator,
+) -> impl Generator<Yield = TokenResult, Return = !> {
+    return move || {
+        yield TokenResult::Err;
+        panic!();
+    };
+}
+*/
+
+/*
+impl Future for CharStream {
+    type Output = char;
+    fn poll(self: Pin<&mut Self>, lw: &std::task::LocalWaker) -> Poll<char> {
+        yield Poll::Ready('a');
+        yield Poll::Pending;
+        return ();
+    }
 }
 
 impl StringInterner {
@@ -53,6 +185,8 @@ impl StringInterner {
         self.index.len()
     }
 }
+*/
+
 /*
 /// we need to internal number to make complex double's size fitts into a token
 pub struct NumInterner {
@@ -80,6 +214,7 @@ impl NumInterner {
 }
 */
 
+/*
 pub trait StrProvider {
     type Handle:Copy;
 
@@ -241,122 +376,137 @@ impl Lexer {
         }
         panic!();
         */
-    }
+}
 }
 
 impl Lexer {
-    fn start_eq(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_le(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_ge(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_and(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_or(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_not(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_tilde(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_at(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_dot(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_comma(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_semi(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_colon(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_pound(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_dollar(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_question(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_quote(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_open_brace(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_closing_brace(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_open_paren(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_closing_paren(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_open_bracket(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_closing_bracket(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_add(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_minus(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_star(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_slash(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_percentage(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
-
-    fn start_caret(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
-        panic!();
-    }
+fn start_eq<'a, T:StrProvider>(mut self: Pin<&'a mut Self>, provider: &T) -> impl Generator + 'a {
+move || {
+loop {
+let c = co_await!(provider.peek());
+if c != '=' {
+yield Token::Eq;
 }
+co_await!(provider.consume());
+yield Token::Eq;
+}
+panic!();
+}
+}
+
+fn start_eq(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_le(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_ge(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_and(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_or(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_not(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_tilde(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_at(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_dot(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_comma(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_semi(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_colon(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_pound(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_dollar(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_question(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_quote(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_open_brace(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_closing_brace(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_open_paren(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_closing_paren(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_open_bracket(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_closing_bracket(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_add(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_minus(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_star(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_slash(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_percentage(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+
+fn start_caret(&mut self, ptr: &mut Ptr<'_>) -> (Token, usize) {
+panic!();
+}
+}
+*/
 
 #[cfg(test)]
 mod tests {
