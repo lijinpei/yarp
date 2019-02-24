@@ -2,6 +2,12 @@
 #![feature(generators, generator_trait)]
 #![feature(trait_alias)]
 
+#[cfg(test)]
+extern crate quickcheck;
+#[cfg(test)]
+#[macro_use(quickcheck)]
+extern crate quickcheck_macros;
+
 extern crate syntax;
 
 pub use syntax::parse::token::Token;
@@ -18,22 +24,21 @@ pub enum Utf8Error {
 
 pub enum CharResult {
     Ok(char),
-    TooShort,
+    NeedMoreU8,
 }
 
 pub enum TokenResult {
     Ok(Token),
-    CharErr,
-    CharTooShort(usize),
-    TooShort,
+    NeedMoreU8,
+    NeedMoreChar,
 }
 
 // an endless u8 generator
-pub trait U8Generator<'a> = Generator<Yield = &'a [u8], Return = !>;
+trait U8Generator<'a> = Generator<Yield = &'a [u8], Return = !>;
 // an endless char generator, unless meets invalid utf8, or don't have enought u8 to decode utf8 char
-pub trait CharGenerator = Generator<Yield = CharResult, Return = Utf8Error>;
+trait CharGenerator = Generator<Yield = CharResult, Return = Utf8Error>;
 // and endless Token generator, unless unlerlying CharGenerator didn't, and don't see enough char to decide on a whole token(eg. '=' vs '==')
-pub trait TokenGenerator = Generator<Yield = TokenResult, Return = !>;
+trait TokenGenerator = Generator<Yield = TokenResult, Return = Utf8Error>;
 
 pub type IntKey = usize;
 /*
@@ -43,70 +48,78 @@ pub struct StringInterner {
 }
 */
 
-pub fn char_generator_from_byte<'b , T: 'b + U8Generator<'b>>(
-    source: T,
-) -> impl Generator<Yield = CharResult, Return = Utf8Error> + 'b where T: std::marker::Unpin {
+pub fn char_generator_from_byte<
+    'b,
+    T: 'b + U8Generator<'b> + std::marker::Unpin,
+>(
+    mut source: T,
+) -> impl CharGenerator + 'b
+where
+{
     return move || {
-        let mut source = source;
-        loop {
-        let mut len = 0usize;
-        let mut pos = 0usize;
+        let mut len: usize = 0;
+        let mut pos: usize = 0;
         let mut input: &[u8] = &[];
 
-        macro_rules! replenish{
-            () => (
+        macro_rules! replenish {
+            () => {{
                 {
-                    {
-                    let res = Pin::new(&mut source).resume();
-                match res {
-                    GeneratorState::Yielded(buf) => {
-                        input = buf;
-                        len = buf.len();
-                        assert!(len != 0);
-                        pos = 1;
-                        input[0] as u32
-                    },
-                    _ => panic!(),
-                }
+                    loop {
+                        match Pin::new(&mut source).resume() {
+                            GeneratorState::Yielded(buf) => {
+                                input = buf;
+                                len = buf.len();
+                                if len == 0 {
+                                    yield CharResult::NeedMoreU8;
+                                    continue;
+                                }
+                                pos = 0;
+                                break;
+                            }
+                            _ => panic!(),
+                        }
                     }
                 }
-            )
+            }};
         }
 
-        macro_rules! next_char {
-            () => (
+        macro_rules! next_u8 {
+            () => {
                 if pos < len {
                     let p1 = pos;
                     pos += 1;
                     input[p1] as u32
                 } else {
-                    yield CharResult::TooShort;
-                    replenish!()
+                    yield CharResult::NeedMoreU8;
+                    replenish!();
+                    pos = 1;
+                    input[0] as u32
                 }
-            )
+            };
         }
 
-        macro_rules! next_char_cont {
-            () => {
-                {
-                let c = next_char!();
+        macro_rules! next_u8_cont {
+            () => {{
+                let c = next_u8!();
                 let mask = 0b1100_0000;
-                if c & mask  != 0b1000_0000 {
+                if c & mask != 0b1000_0000 {
                     return Utf8Error::InvalidCont;
                 }
                 c & !mask
-                }
-            }
+            }};
         }
 
         macro_rules! ok_char {
             ($u_32:expr) => {
                 unsafe { CharResult::Ok(std::char::from_u32_unchecked($u_32)) }
-            }
+            };
         }
 
+        replenish!();
+        pos = 0;
+
         loop {
-            let c1 = next_char!();
+            let c1 = next_u8!();
             if c1 < 0b1000_0000u32 {
                 yield ok_char!(c1);
                 continue;
@@ -114,32 +127,84 @@ pub fn char_generator_from_byte<'b , T: 'b + U8Generator<'b>>(
             if c1 < 0b1100_0000u32 {
                 return Utf8Error::InvalidLeading;
             }
-            let c2 = next_char_cont!();
+            let c2 = next_u8_cont!();
             if c1 < 0b1110_0000u32 {
                 yield ok_char!((c1 & 0x1F) << 6 | c2);
                 continue;
             }
-            let c3 = next_char_cont!();
+            let c3 = next_u8_cont!();
             if c1 < 0b1111_0000u32 {
                 yield ok_char!((c1 & 0xF) << 12 | c2 << 6 | c3);
                 continue;
             }
-            let c4 = next_char_cont!();
+            let c4 = next_u8_cont!();
             yield ok_char!((c1 & 0x7) << 18 | c2 << 12 | c3 << 6 | c4);
         }
-    }};
-}
-
-/*
-fn token_generator_from_char(
-    _input: &CharGenerator,
-) -> impl Generator<Yield = TokenResult, Return = !> {
-    return move || {
-        yield TokenResult::Err;
-        panic!();
     };
 }
-*/
+
+pub fn str_to_char_slice(input: &[u8]) -> Result<Vec<char>, Utf8Error> {
+    let u8_gen = || {
+        yield input;
+        panic!();
+    };
+    let mut char_gen = char_generator_from_byte(u8_gen);
+    let mut ret = Vec::new();
+    loop {
+        match Pin::new(&mut char_gen).resume() {
+            GeneratorState::Yielded(res) => match res {
+                CharResult::Ok(ch) => {
+                    ret.push(ch);
+                }
+                CharResult::NeedMoreU8 => {
+                    return Ok(ret);
+                }
+            },
+            GeneratorState::Complete(err) => {
+                return Err(err);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    fn prop1(input: &str) -> bool {
+        let vec1: Vec<char> = input.chars().collect();
+        match str_to_char_slice(input.as_bytes()) {
+            Ok(vec) => {
+                return vec == vec1;
+            }
+            _ => {
+                return false;
+            }
+        }
+    }
+    #[quickcheck]
+    fn check_1(input: String) -> bool {
+        let res = prop1(input.as_str());
+        return res;
+    }
+}
+
+fn token_generator_from_char(
+    mut source: &CharGenerator,
+) -> impl TokenGenerator {
+    return move || {
+        /*
+        macro_rules! next_char {
+            () => {
+
+            }
+        }
+        loop {
+        }
+        */
+        yield TokenResult::NeedMoreU8;
+        return Utf8Error::InvalidLeading;
+    };
+}
 
 /*
 impl Future for CharStream {
@@ -507,43 +572,3 @@ panic!();
 }
 }
 */
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn prop_1(ss: Vec<String>) -> bool {
-        let mut interner = StringInterner::empty();
-        let mut index = vec![];
-        for s in ss.iter() {
-            index.push(interner.insert(s.as_str()));
-        }
-        for (i, s) in ss.iter().enumerate() {
-            if interner.get(index[i]) != s {
-                return false;
-            }
-        }
-        for (i, s) in ss.iter().enumerate() {
-            interner.insert(s.as_str());
-            if interner.get(index[i]) != s {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    #[quickcheck]
-    fn check_1(ss: Vec<String>) -> bool {
-        prop_1(ss)
-    }
-
-    #[quickcheck]
-    fn check_2(ss: Vec<Vec<u8>>) -> bool {
-        prop_1(
-            ss.iter()
-                .map(|v| unsafe {
-                    std::str::from_utf8_unchecked(v.as_slice()).to_string()
-                })
-                .collect(),
-        )
-    }
-}

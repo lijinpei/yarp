@@ -85,6 +85,7 @@ pub fn parse_utf8(input: &str, start: &mut usize) -> Option<char> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     fn parse_utf8_ok(i: u32) {
         // NOTE: this is plat form dependent
         let bytes: [u8; 4] = unsafe { std::mem::transmute(i.to_le()) };
@@ -103,17 +104,18 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn test_parse_utf8() {
-        let mut count = 0;
-        for i in 0u64..=(u32::max_value() as u64) {
-            if count == 10000000 {
-                count = 0;
-                eprintln!("{}", i);
+    /*
+        #[test]
+        fn test_parse_utf8() {
+            let mut count = 0;
+            for i in 0u64..=(u32::max_value() as u64) {
+                if count == 10000000 {
+                    count = 0;
+                    eprintln!("{}", i);
+                }
+                count += 1;
+                parse_utf8_ok(i as u32);
             }
-            count += 1;
-            parse_utf8_ok(i as u32);
         }
-    }
+    */
 }
